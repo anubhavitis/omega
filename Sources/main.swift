@@ -1,66 +1,115 @@
 import Cocoa
 
 class KeyboardMonitor: NSObject {
-    private var localMonitor: Any?
-    private var globalMonitor: Any?
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
 
     func startMonitoring() {
-        // Monitor events within our application
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
-            self.handleKeyEvent(event)
-            return event
+        // Create event tap for both keyDown and keyUp events
+        let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+
+        guard
+            let eventTap = CGEvent.tapCreate(
+                tap: .cgSessionEventTap,
+                place: .headInsertEventTap,
+                options: .defaultTap,
+                eventsOfInterest: CGEventMask(eventMask),
+                callback: eventCallback,
+                userInfo: UnsafeMutableRawPointer(Unmanaged.passRetained(self).toOpaque())
+            )
+        else {
+            print("Failed to create event tap")
+            return
         }
 
-        // Monitor events globally (in other applications)
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { event in
-            self.handleKeyEvent(event)
-        }
+        self.eventTap = eventTap
+
+        // Create a RunLoop source and add it to the current RunLoop
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+
+        // Enable the event tap
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+
+        print("Keyboard monitoring started. Press Cmd+C to quit.")
+        print("'e' will be changed to 'f' in browsers.")
     }
 
     func stopMonitoring() {
-        if let localMonitor = localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-            self.localMonitor = nil
+        if let runLoopSource = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+            self.runLoopSource = nil
         }
 
-        if let globalMonitor = globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-            self.globalMonitor = nil
+        if let eventTap = eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+            self.eventTap = nil
         }
     }
 
-    private func getActiveApplication() -> String {
+    public func getActiveApplication() -> (name: String, bundleId: String) {
         if let activeApp = NSWorkspace.shared.frontmostApplication {
-            return
-                "\(activeApp.localizedName) (Bundle ID: \(activeApp.bundleIdentifier ?? "unknown"))"
+            return (
+                name: activeApp.localizedName ?? "Unknown",
+                bundleId: activeApp.bundleIdentifier ?? "unknown"
+            )
         }
-        return "Unknown Application"
+        return ("Unknown Application", "unknown")
     }
 
-    private func handleKeyEvent(_ event: NSEvent) {
-        // Get key information
-        let keyCode = event.keyCode
-        let characters = event.characters ?? ""
-        let modifiers = event.modifierFlags
-        let activeApp = getActiveApplication()
-
-        // Print event information
-        print("\n--- Keyboard Event ---")
-        print("Active Application: \(activeApp)")
-        print("Key pressed - Code: \(keyCode), Character: \(characters)")
-
-        // Check for modifier keys (Command, Option, Shift, Control)
-        var modifierKeys: [String] = []
-        if modifiers.contains(.command) { modifierKeys.append("Command") }
-        if modifiers.contains(.option) { modifierKeys.append("Option") }
-        if modifiers.contains(.shift) { modifierKeys.append("Shift") }
-        if modifiers.contains(.control) { modifierKeys.append("Control") }
-
-        if !modifierKeys.isEmpty {
-            print("Modifier keys: \(modifierKeys.joined(separator: " + "))")
-        }
-        print("-------------------")
+    public func isBrowser(_ bundleId: String) -> Bool {
+        let browserBundleIds = [
+            "com.apple.Safari",
+            "com.google.Chrome",
+            "org.mozilla.firefox",
+            "com.microsoft.edgemac",
+            "com.brave.Browser",
+        ]
+        return browserBundleIds.contains(bundleId)
     }
+}
+
+private func eventCallback(
+    proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    guard let refcon = refcon else {
+        return Unmanaged.passRetained(event)
+    }
+
+    let keyboardMonitor: KeyboardMonitor = Unmanaged<KeyboardMonitor>.fromOpaque(refcon)
+        .takeUnretainedValue()
+    let activeApp = keyboardMonitor.getActiveApplication()
+
+    // Only process if we're in a browser
+    guard keyboardMonitor.isBrowser(activeApp.bundleId) else {
+        return Unmanaged.passRetained(event)
+    }
+
+    if type == .keyDown || type == .keyUp {
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+
+        // Convert CGEvent to NSEvent to get character
+        if let nsEvent = NSEvent(cgEvent: event) {
+            let keyChar = nsEvent.characters ?? ""
+
+            print("\n--- Keyboard Event ---")
+            print("Active Application: \(activeApp.name) (Bundle ID: \(activeApp.bundleId))")
+            print("Event Type: \(type == .keyDown ? "KeyDown" : "KeyUp")")
+            print("Original Key: Code: \(keyCode), Character: \(keyChar)")
+
+            // Check if the key is 'e' (keycode 14)
+            if keyCode == 14 {
+                // Modify to 'f' (keycode 3)
+                event.setIntegerValueField(.keyboardEventKeycode, value: 3)
+
+                print("Modified Key: Changed 'e' to 'f'")
+                print("-------------------")
+                return Unmanaged.passRetained(event)
+            }
+        }
+    }
+
+    return Unmanaged.passRetained(event)
 }
 
 // Create the application
@@ -68,7 +117,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let keyboardMonitor = KeyboardMonitor()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("Keyboard monitoring started. Press Cmd+C to quit.")
         keyboardMonitor.startMonitoring()
     }
 
