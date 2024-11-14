@@ -75,5 +75,34 @@ public class keyboardOperator {
         return specialKeys[keyCode]
     }
 
+    func getKeyName(event: CGEvent) -> String? {
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let flags = event.flags
+        let activeApp = self.getActiveApplication()
+
+        if let nsEvent = NSEvent(cgEvent: event) {
+            let keyChar = nsEvent.characters ?? ""
+
+            // Get special key name if applicable
+            let specialKeyName = self.getSpecialKeyName(keyCode: keyCode) ?? keyChar
+
+            // Create array of active modifier keys
+            var activeModifiers: [String] = []
+            if flags.contains(.maskCommand) { activeModifiers.append("⌘") }
+            if flags.contains(.maskAlternate) { activeModifiers.append("⌥") }
+            if flags.contains(.maskControl) { activeModifiers.append("⌃") }
+            if flags.contains(.maskShift) { activeModifiers.append("⇧") }
+
+            // Build the key combination string
+            let keyCombo =
+                activeModifiers.isEmpty
+                ? specialKeyName
+                : "\(activeModifiers.joined(separator: " + "))+\(specialKeyName)"
+
+            return keyCombo
+        }
+        return nil
+    }
+
     //  TODO: write evenTransformer function here
 }

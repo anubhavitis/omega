@@ -61,52 +61,27 @@ private func eventCallback(
     proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
     let kbOperator = keyboardOperator()
-    let activeApp = kbOperator.getActiveApplication()
 
     // Only process if we're in a browser
+    let activeApp = kbOperator.getActiveApplication()
     guard kbOperator.isTargetApplication(activeApp.bundleId) else {
         return Unmanaged.passRetained(event)
     }
 
+    // if keyboard event, ie. keyDown or keyUp
     if type == .keyDown || type == .keyUp {
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        let flags = event.flags  // Get modifier flags
+        if let keyName = kbOperator.getKeyName(event: event) {
+            let keyType = (type == .keyDown) ? "KeyDown" : "KeyUp"
+            print("\(activeApp.name):: \(keyType) :: keyName: \(keyName)")
+        }
 
-        // Convert CGEvent to NSEvent to get character
-        if let nsEvent = NSEvent(cgEvent: event) {
-            let keyChar = nsEvent.characters ?? ""
-
-            // Get special key name if applicable
-            let specialKeyName = kbOperator.getSpecialKeyName(keyCode: keyCode) ?? keyChar
-
-            // Create array of active modifier keys
-            var activeModifiers: [String] = []
-            if flags.contains(.maskCommand) { activeModifiers.append("⌘") }
-            if flags.contains(.maskAlternate) { activeModifiers.append("⌥") }
-            if flags.contains(.maskControl) { activeModifiers.append("⌃") }
-            if flags.contains(.maskShift) { activeModifiers.append("⇧") }
-
-            // Build the key combination string
-            let keyCombo =
-                activeModifiers.isEmpty
-                ? specialKeyName
-                : "\(activeModifiers.joined(separator: " + "))+\(specialKeyName)"
-
-            print(
-                "\(activeApp.name):: \(activeApp.bundleId) :: \(type == .keyDown ? "KeyDown" : "KeyUp") ::\(keyCode) - \(keyChar)"
-            )
-            if !activeModifiers.isEmpty {
-                print("Key Combination: \(keyCombo)")
-                print("================")
-            }
-
-            // Check if the key is 'e' (keycode 14)
-            if keyCode == 15 {
-                // Modify to 'f' (keycode 3)
-                event.setIntegerValueField(.keyboardEventKeycode, value: 13)
-                print(">>>>>>>>>>  Modified Key: Changed 'e' to 'f'")
-                return Unmanaged.passRetained(event)
-            }
+        // the acutal modification
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)  // Get modifier flags
+        if keyCode == 15 {
+            // Modify to 'f' (keycode 3)
+            event.setIntegerValueField(.keyboardEventKeycode, value: 13)
+            print(">>>>>>>>>>  Modified Key: Changed 'r' to 'w'")
+            return Unmanaged.passRetained(event)
         }
     }
 
