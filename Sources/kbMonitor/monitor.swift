@@ -77,11 +77,17 @@ private func eventCallback(
 
         // the acutal modification
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)  // Get modifier flags
-        if keyCode == 15 {
-            // Modify to 'f' (keycode 3)
-            event.setIntegerValueField(.keyboardEventKeycode, value: 13)
-            print(">>>>>>>>>>  Modified Key: Changed 'r' to 'w'")
+        //print("the code is \(keyCode)") safario
+        if keyCode == 0 {
+            event.setIntegerValueField(.keyboardEventKeycode, value: 34)  // changing it to 34
+            print(">>>>>>>>>>  Modified Key: Changed 'a' to 'i'")
             return Unmanaged.passRetained(event)
+        } else if keyCode == 3 {
+            // this is e
+            event.setIntegerValueField(.keyboardEventKeycode, value: 2)  // changing it to d
+            print(">>>>>>>>>>  Modified Key: Changed 'a' to 'i'")
+            return Unmanaged.passRetained(event)
+
         }
     }
 
